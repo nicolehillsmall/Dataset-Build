@@ -16,29 +16,6 @@ knitr::opts_chunk$set(echo=T, fig.width=10, fig.height=6, warning=F, message=F )
 ```
 
 
-# Reading Assignment Questions & Answers
-
-1. How did each author identify coherent “neighborhoods” (or groups) in each model? 
-
-ANSWER: Neighborhoods were identified in a straight-forward mannger, for example "Wealthly, white, educated." 
-
-
-2. Would these “neighborhoods” line up with neighborhoods that are defined on a city’s zoning maps (Links to an external site.)? 
-
-ANSWER: Neither of these "neighborhoods" would line up with neighborhoods that are defined on a city's zoning map. Zoning maps will include resident type, parking, commercial busildings, etc. 
-
-
-3. Did the two models use the same data to create the groups? 
-
-ANSWER: The two models used different data to create the groups. 
-
-
-4. How do the labels and descriptions of the groups differ in each model and why? 
-
-ANSWER: The labels and descriptions of the groups differ between each model because of their target audience. The "Data-Driven Approaches" model seems to be targeted towards board members or investors. The labels and descriptions describe building type, condition, foreclosures, etc. The labels and descriptions from the "Differentiating pathways" models uses phrases to describle the people that live in the neighborhood - ethnicity, single family, poverty, etc. 
-
-
-
 # Packages
 
 ```{r}
@@ -352,30 +329,4 @@ Group 4: Well-Mixed Neighborhood
 
 Group 5: Diverse Families 
 
-
-# PART 2
-
-## Question 1
-
-Compare that set of groups to the groups identified by the model using only the three indices above. Are they identifying the same groups? Which group is missing? 
-
-ANSWER: 
-
-## Question 2
-
-Select three census variables from the full list of 30, and create a new clustering model. How many groups are generated? Are they similar groups to the full model? Are our inferences significantly different if we have a limited amount of data to draw from? 
-
-Report your three variables and describe the groups that are identified.
-
-ANSWER:
-
-## Reflection
-
-Reflect on how the data we use in these models defines how we are defining and describing the neighborhoods (groups) within these models?
-
-Are these clusters valid constructs? Do we believe that they are accurately describing a concrete reality about the world? Would knowing which group that a tract is part of help us predict something about the tract, such as outcomes that children would experience living there, or how the tract might change over time?
-
-How do we know which is the right set of groups to use?
-
-ANSWER:
 
