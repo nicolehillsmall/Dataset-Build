@@ -1,0 +1,381 @@
+---
+title: "Lab-04 Build a City Dataset / Long Beach, CA"
+author: "Nicole Hill"
+date: "4/8/2020"
+output:
+  html_document:
+    theme: readable
+    highlight: tango
+    toc: true
+    self_contained: false
+    number_sections: false
+    css: textbook.css
+---
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo=T, fig.width=10, fig.height=6, warning=F, message=F )
+```
+
+
+# Reading Assignment Questions & Answers
+
+1. How did each author identify coherent “neighborhoods” (or groups) in each model? 
+
+ANSWER: Neighborhoods were identified in a straight-forward mannger, for example "Wealthly, white, educated." 
+
+
+2. Would these “neighborhoods” line up with neighborhoods that are defined on a city’s zoning maps (Links to an external site.)? 
+
+ANSWER: Neither of these "neighborhoods" would line up with neighborhoods that are defined on a city's zoning map. Zoning maps will include resident type, parking, commercial busildings, etc. 
+
+
+3. Did the two models use the same data to create the groups? 
+
+ANSWER: The two models used different data to create the groups. 
+
+
+4. How do the labels and descriptions of the groups differ in each model and why? 
+
+ANSWER: The labels and descriptions of the groups differ between each model because of their target audience. The "Data-Driven Approaches" model seems to be targeted towards board members or investors. The labels and descriptions describe building type, condition, foreclosures, etc. The labels and descriptions from the "Differentiating pathways" models uses phrases to describle the people that live in the neighborhood - ethnicity, single family, poverty, etc. 
+
+
+
+# Packages
+
+```{r}
+library( geojsonio )   # read shapefiles
+library( sp )          # work with shapefiles
+library( sf )          # work with shapefiles - simple features format
+library( mclust )      # cluster analysis 
+library( tmap )        # theme maps
+library( ggplot2 )     # graphing 
+library( ggthemes )    # nice formats for ggplots
+library( dplyr )       # data wrangling 
+library( pander )      # formatting RMD tables
+library( tidycensus )
+library( cartogram )  # spatial maps w/ tract size bias reduction
+library( maptools )   # spatial object manipulation 
+```
+
+
+# Data Source
+
+This exercise uses Census data from the 2010 American Communities Survey made available through the [Diversity and Disparities Project](https://s4.ad.brown.edu/projects/diversity/Researcher/Bridging.htm).
+
+This exercise uses information on MSA to FIPS crosswalks provided by the [National Bureau for Economic Research (NBER)](https://www.nber.org/data/cbsa-fips-county-crosswalk.html). 
+
+
+
+**DATA DICTIONARY**
+
+
+```{r, echo=F}
+data.dictionary <- 
+structure(list(LABEL = c("pnhwht12", "pnhblk12", "phisp12", 
+"pntv12", "pfb12", "polang12", "phs12", "pcol12", "punemp12", 
+"pflabf12", "pprof12", "pmanuf12", "pvet12", "psemp12", "hinc12", 
+"incpc12", "ppov12", "pown12", "pvac12", "pmulti12", "mrent12", 
+"mhmval12", "p30old12", "p10yrs12", "p18und12", "p60up12", "p75up12", 
+"pmar12", "pwds12", "pfhh12"), VARIABLE = c("Percent white, non-Hispanic", 
+"Percent black, non-Hispanic", "Percent Hispanic", "Percent Native American race", 
+"Percent foreign born", "Percent speaking other language at home, age 5 plus", 
+"Percent with high school degree or less", "Percent with 4-year college degree or more", 
+"Percent unemployed", "Percent female labor force participation", 
+"Percent professional employees", "Percent manufacturing employees", 
+"Percent veteran", "Percent self-employed", "Median HH income, total", 
+"Per capita income", "Percent in poverty, total", "Percent owner-occupied units", 
+"Percent vacant units", "Percent multi-family units", "Median rent", 
+"Median home value", "Percent structures more than 30 years old", 
+"Percent HH in neighborhood 10 years or less", "Percent 17 and under, total", 
+"Percent 60 and older, total", "Percent 75 and older, total", 
+"Percent currently married, not separated", "Percent widowed, divorced and separated", 
+"Percent female-headed families with children")), class = "data.frame", row.names = c(NA, 
+-30L))
+
+
+
+data.dictionary %>% pander()
+```
+
+# Setup
+
+## Step 1: Select MSA
+
+```{r}
+#select MSA
+
+crosswalk <- read.csv( "https://raw.githubusercontent.com/DS4PS/cpp-529-master/master/data/cbsatocountycrosswalk.csv",  stringsAsFactors=F, colClasses="character" )
+
+
+grep( "LONG BEACH", crosswalk$msaname, value=TRUE ) 
+```
+```{r}
+#select all county fips to use
+
+these.lalb <- crosswalk$msaname == "LOS ANGELES-LONG BEACH, CA"
+these.fips <- crosswalk$fipscounty[ these.lalb ]
+these.fips <- na.omit( these.fips )
+```
+
+## Step 2: Download a Shapefile with Population Data
+
+```{r}
+census_api_key("e511866c0af14a9b3845572aaa38fb9bd77c86f9")
+
+these.lalb <- crosswalk$msaname == "LOS ANGELES-LONG BEACH, CA"
+these.fips <- crosswalk$fipscounty[ these.lalb ]
+these.fips <- na.omit( these.fips )
+
+state.fips <- substr( these.fips, 1, 2 )
+county.fips <- substr( these.fips, 3, 5 )
+
+lalb.pop <-
+get_acs( geography = "tract", variables = "B01003_001",
+         state = "06", county = county.fips[state.fips=="06"], geometry = TRUE ) %>% 
+         select( GEOID, estimate ) %>%
+         rename( POP=estimate )
+
+
+```
+
+## Step 3: Add Census Data
+
+```{r}
+URL <- "https://github.com/DS4PS/cpp-529-master/raw/master/data/ltdb_std_2010_sample.rds"
+census.dat <- readRDS(gzcon(url( URL )))
+
+# convert to numeric
+census.dat$tractid<-as.numeric(census.dat$tractid)
+lalb.pop$GEOID<-as.numeric(lalb.pop$GEOID)
+
+# can merge an sf object and data.frame
+lalb <- merge( lalb.pop, census.dat, by.x="GEOID", by.y="tractid" )
+
+# make sure there are no empty polygons
+lalb <- lalb[ ! st_is_empty( lalb ) , ]
+```
+
+## Step 4: Transform the Shapefile into A Dorling Cartogram
+
+```{r}
+# convert sf map object to an sp version
+lalb.sp <- as_Spatial( lalb )
+
+class( lalb.sp )
+```
+
+```{r}
+# create the map
+plot( lalb.sp )
+```
+
+```{r}
+# project map and remove empty tracts
+lalb.sp <- spTransform( lalb.sp, CRS("+init=epsg:3395"))
+lalb.sp <- lalb.sp[ lalb.sp$POP != 0 & (! is.na( lalb.sp$POP )) , ]
+
+# convert census tract polygons to dorling cartogram
+lalb.sp$pop.w <- lalb.sp$POP / 9000 # max(msp.sp$POP)   # standardizes it to max of 1.5
+lalb_dorling <- cartogram_dorling( x=lalb.sp, weight="pop.w", k=0.05 )
+plot( lalb_dorling )
+```
+
+```{r}
+tm_shape( lalb_dorling ) + 
+  tm_polygons( size="POP", col="hinc12", n=7, style="quantile", palette="Spectral" ) 
+```
+
+```{r}
+tm_shape( lalb_dorling) + 
+  tm_polygons( col="hinc12", n=10, style="quantile", palette="Spectral" ) +
+  tm_layout( "Dorling Cartogram", title.position=c("right","top") )
+```
+
+
+# Clustering
+
+## Prepare Data for Clustering
+
+```{r}
+# transform variable to z-scores
+
+keep.these <- c("pnhwht12", "pnhblk12", "phisp12", "pntv12", "pfb12", "polang12", 
+"phs12", "pcol12", "punemp12", "pflabf12", "pprof12", "pmanuf12", 
+"pvet12", "psemp12", "hinc12", "incpc12", "ppov12", "pown12", 
+"pvac12", "pmulti12", "mrent12", "mhmval12", "p30old12", "p10yrs12", 
+"p18und12", "p60up12", "p75up12", "pmar12", "pwds12", "pfhh12")
+
+d1 <- lalb_dorling@data
+d2 <- select( d1, keep.these )
+d3 <- apply( d2, 2, scale )
+head( d3[,1:6] ) %>% pander()
+
+
+
+
+
+```
+
+## Perform Cluster Analysis
+
+```{r}
+# cluster analysis 
+
+set.seed( 1234 )
+fit <- Mclust( d3 )
+lalb_dorling$cluster <- as.factor( fit$classification )
+summary( fit )
+```
+
+
+```{r}
+plot( fit, what = "classification" )
+```
+
+## Identifying Neighborhood Clusters
+
+```{r}
+# build the charts to compare census characteristics across the groups
+
+df.pct <- sapply( d2, ntile, 100 )
+d4 <- as.data.frame( df.pct )
+d4$cluster <- as.factor( paste0("GROUP-",fit$classification) )
+
+num.groups <- length( unique( fit$classification ) )
+
+stats <- 
+d4 %>% 
+  group_by( cluster ) %>% 
+  summarise_each( funs(mean) )
+
+t <- data.frame( t(stats), stringsAsFactors=F )
+names(t) <- paste0( "GROUP.", 1:num.groups )
+t <- t[-1,]
+
+
+
+for( i in 1:num.groups )
+{
+  z <- t[,i]
+  plot( rep(1,30), 1:30, bty="n", xlim=c(-75,100), 
+        type="n", xaxt="n", yaxt="n",
+        xlab="Percentile", ylab="",
+        main=paste("GROUP",i) )
+  abline( v=seq(0,100,25), lty=3, lwd=1.5, col="gray90" )
+  segments( y0=1:30, x0=0, x1=100, col="gray70", lwd=2 )
+  text( -0.2, 1:30, data.dictionary$VARIABLE[-1], cex=0.85, pos=2 )
+  points( z, 1:30, pch=19, col="firebrick", cex=1.5 )
+  axis( side=1, at=c(0,50,100), col.axis="gray", col="gray" )
+}
+```
+
+# Variable Selection for Clustering 
+
+```{r}
+d3 <- as.data.frame(d3)
+dim1 <- d3$pown12 + d3$pmulti12 + d3$p10yrs12 + d3$pwds12 + d3$pfhh12   
+dim2 <- d3$pnhwht12 + d3$pnhblk12 + d3$phisp12 + d3$pfb12 + d3$polang12
+dim3 <- d3$pcol12 + d3$phs12 + d3$pprof12 + d3$hinc12 + d3$mhmval12
+
+
+plot( dim1, dim2, pch=19, col=gray(0.5,0.5), cex=1.5 )
+```
+
+```{r}
+plot( dim1, dim3, pch=19, col=gray(0.5,0.5), cex=1.5 )
+```
+
+```{r}
+plot( dim2, dim3, pch=19, col=gray(0.5,0.5), cex=1.5 )
+```
+
+```{r}
+# data set of three indices
+d22 <- data.frame( dim1, dim2, dim3 )
+fit2 <- Mclust( d22 )
+summary( fit2 )
+```
+
+```{r}
+lalb_dorling$cluster2 <- as.factor( fit2$classification )
+
+# dataset of three census variables 
+d33 <- data.frame( d3$p18und12, d3$pflabf12, d3$hinc12 )
+fit3 <- Mclust( d33 )
+summary( fit3 )
+```
+
+```{r}
+lalb_dorling$cluster3 <- as.factor( fit3$classification )
+
+tmap_mode("plot")
+tmap_style("cobalt")
+
+tm1 <- 
+tm_shape( lalb_dorling) + 
+  tm_polygons( col="cluster", palette="Accent"  )
+
+tm2 <- 
+tm_shape( lalb_dorling ) + 
+  tm_polygons( col="cluster2", palette="Accent"  )
+
+tm3 <- 
+tm_shape( lalb_dorling) + 
+  tm_polygons( col="cluster3", palette="Accent"  )
+
+
+tmap_arrange( tm1, tm2, tm3 )
+```
+
+```{r}
+plot( fit3, what = "classification" )
+```
+
+```{r}
+plot( fit2, what = "classification" )
+```
+
+# PART 1
+
+City: Long Beach, California
+
+Please see above for dataset and clusters/cluster demographics. 
+
+The labels for each of the five groups are as follows: 
+
+Group 1:Affluent Neighborhood 
+
+Group 2: Underprivileged Families 
+
+Group 3: Stuck In The Middle (Of the Neighborhood) 
+
+Group 4: Well-Mixed Neighborhood 
+
+Group 5: Diverse Families 
+
+
+# PART 2
+
+## Question 1
+
+Compare that set of groups to the groups identified by the model using only the three indices above. Are they identifying the same groups? Which group is missing? 
+
+ANSWER: 
+
+## Question 2
+
+Select three census variables from the full list of 30, and create a new clustering model. How many groups are generated? Are they similar groups to the full model? Are our inferences significantly different if we have a limited amount of data to draw from? 
+
+Report your three variables and describe the groups that are identified.
+
+ANSWER:
+
+## Reflection
+
+Reflect on how the data we use in these models defines how we are defining and describing the neighborhoods (groups) within these models?
+
+Are these clusters valid constructs? Do we believe that they are accurately describing a concrete reality about the world? Would knowing which group that a tract is part of help us predict something about the tract, such as outcomes that children would experience living there, or how the tract might change over time?
+
+How do we know which is the right set of groups to use?
+
+ANSWER:
+
